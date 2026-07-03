@@ -1,0 +1,114 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add ShowMo Camera",
+        "menu_options": {
+          "scan": "Scan Network",
+          "manual": "Manual Entry"
+        }
+      },
+      "scan": {
+        "title": "Scan Network",
+        "description": "Scan your local network for ONVIF cameras. The integration will automatically use the local subnet. Username and password are optional here, but providing them helps fetch model and serial information during discovery.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Optional camera username used to fetch ONVIF device information",
+          "password": "Optional camera password used to fetch ONVIF device information"
+        }
+      },
+      "pick_device": {
+        "title": "Select a Camera",
+        "description": "Choose one of the discovered ONVIF devices.",
+        "data": {
+          "device": "Discovered camera"
+        }
+      },
+      "confirm_device": {
+        "title": "Confirm Camera",
+        "description": "Review the discovered camera before finishing setup.\n\nManufacturer: {manufacturer}\nModel: {model}\nIP address: {ip}\nSerial number: {serial}\nFirmware: {firmware}\nHardware ID: {hardware_id}\nONVIF URL: {onvif_url}"
+      },
+      "manual": {
+        "title": "Manual Entry",
+        "description": "Enter your ShowMo camera details. The RTSP URL is typically rtsp://IP_ADDRESS/live0_0.sdp for the main stream.",
+        "data": {
+          "name": "Camera Name (optional)",
+          "rtsp_url": "RTSP URL",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "name": "A friendly name for this camera. Defaults to 'Live' if not provided.",
+          "rtsp_url": "Full RTSP URL including path, e.g., rtsp://192.168.1.120/live0_0.sdp",
+          "username": "Camera username (commonly 'admin')",
+          "password": "Camera password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure ShowMo Camera",
+        "description": "Update your ShowMo camera settings.",
+        "data": {
+          "name": "Camera Name (optional)",
+          "rtsp_url": "RTSP URL",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "name": "A friendly name for this camera. Defaults to 'Live' if not provided.",
+          "rtsp_url": "Full RTSP URL including path, e.g., rtsp://192.168.1.120/live0_0.sdp",
+          "username": "Camera username (commonly 'admin')",
+          "password": "Camera password"
+        }
+      }
+    },
+    "error": {
+      "invalid_rtsp_url": "Invalid RTSP URL. Must start with rtsp://",
+      "invalid_auth": "Username and password are required",
+      "cannot_connect": "Failed to connect to the camera",
+      "discovery_failed": "Camera discovery failed. Check your network and try again",
+      "invalid_device": "The selected device is no longer available. Please rescan",
+      "cannot_determine_subnet": "Could not determine the local subnet automatically",
+      "no_cameras_found": "No ONVIF cameras were found on that subnet",
+      "unknown": "An unexpected error occurred. Check the logs and try again"
+    },
+    "abort": {
+      "already_configured": "This camera is already configured",
+      "reconfigure_failed": "Reconfiguration failed"
+    }
+  },
+  "services": {
+    "ptz": {
+      "name": "PTZ control",
+      "description": "Pan, tilt, zoom, or recall a preset on a ShowMo camera. Fixed-lens models advertise PTZ but answer \"not supported\"; the call is logged and ignored.",
+      "fields": {
+        "move_mode": {
+          "name": "Move mode",
+          "description": "The PTZ operation to perform."
+        },
+        "pan": {
+          "name": "Pan",
+          "description": "Pan velocity for ContinuousMove (-1 left … 1 right)."
+        },
+        "tilt": {
+          "name": "Tilt",
+          "description": "Tilt velocity for ContinuousMove (-1 down … 1 up)."
+        },
+        "zoom": {
+          "name": "Zoom",
+          "description": "Zoom velocity for ContinuousMove (-1 out … 1 in)."
+        },
+        "preset": {
+          "name": "Preset",
+          "description": "Preset token to recall when move_mode is GotoPreset."
+        },
+        "continuous_duration": {
+          "name": "Continuous duration",
+          "description": "Seconds to move before auto-stopping a ContinuousMove (0 = no auto-stop)."
+        }
+      }
+    }
+  }
+}

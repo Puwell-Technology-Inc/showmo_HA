@@ -1,0 +1,14 @@
+{
+  "domain": "showmo",
+  "name": "ShowMo",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["stream"],
+  "documentation": "https://github.com/Puwell-Technology-Inc/showmo_HA",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Puwell-Technology-Inc/showmo_HA/issues",
+  "loggers": ["custom_components.showmo"],
+  "requirements": [],
+  "version": "0.1.0"
+}

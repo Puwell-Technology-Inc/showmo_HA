@@ -1,0 +1,64 @@
+ptz:
+  name: PTZ control
+  description: >-
+    Pan, tilt, zoom, or recall a preset on a ShowMo camera. Fixed-lens models
+    advertise PTZ but answer "not supported"; the call is logged and ignored.
+  target:
+    entity:
+      integration: showmo
+      domain: camera
+  fields:
+    move_mode:
+      name: Move mode
+      description: The PTZ operation to perform.
+      required: true
+      default: ContinuousMove
+      selector:
+        select:
+          options:
+            - ContinuousMove
+            - Stop
+            - GotoPreset
+            - GotoHomePosition
+    pan:
+      name: Pan
+      description: Pan velocity for ContinuousMove (-1 left … 1 right).
+      default: 0.0
+      selector:
+        number:
+          min: -1.0
+          max: 1.0
+          step: 0.1
+    tilt:
+      name: Tilt
+      description: Tilt velocity for ContinuousMove (-1 down … 1 up).
+      default: 0.0
+      selector:
+        number:
+          min: -1.0
+          max: 1.0
+          step: 0.1
+    zoom:
+      name: Zoom
+      description: Zoom velocity for ContinuousMove (-1 out … 1 in).
+      default: 0.0
+      selector:
+        number:
+          min: -1.0
+          max: 1.0
+          step: 0.1
+    preset:
+      name: Preset
+      description: Preset token to recall when move_mode is GotoPreset.
+      default: ""
+      selector:
+        text:
+    continuous_duration:
+      name: Continuous duration
+      description: Seconds to move before auto-stopping a ContinuousMove (0 = no auto-stop).
+      default: 0.5
+      selector:
+        number:
+          min: 0.0
+          max: 5.0
+          step: 0.1
