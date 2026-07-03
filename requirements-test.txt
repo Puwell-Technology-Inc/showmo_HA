@@ -1,0 +1,10 @@
+# Test dependencies for the ShowMo integration.
+#
+# pytest-homeassistant-custom-component pins a matching Home Assistant + pytest
+# stack (Home Assistant 2024.3.x here). To run the suite:
+#
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements-test.txt
+#   pytest
+#
+pytest-homeassistant-custom-component==0.13.109
