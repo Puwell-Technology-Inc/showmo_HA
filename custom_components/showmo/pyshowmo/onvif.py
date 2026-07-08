@@ -250,6 +250,39 @@ def parse_device_information(xml_text: str) -> DeviceInfo:
     )
 
 
+def _safe_onvif_url_for_source(
+    xaddrs: list[str],
+    source_ip: str,
+) -> tuple[str, int]:
+    """Return an ONVIF device-service URL bound to the WS-Discovery source IP.
+
+    WS-Discovery ProbeMatch responses are unauthenticated: any host on the LAN
+    can answer a probe and put an arbitrary XAddr (even an off-network URL) in
+    the reply, which would otherwise cause credentials to be sent to a host the
+    attacker controls. Only accept an advertised XAddr when it uses http(s) and
+    its host matches the UDP source IP; otherwise fall back to a conservative
+    ``http://{source_ip}:{port}/onvif/device_service`` using the advertised port
+    (or 80) so probing stays pinned to the responder.
+    """
+    for addr in xaddrs:
+        parsed = urlparse(addr)
+        if parsed.scheme not in ("http", "https"):
+            continue
+        if parsed.hostname == source_ip:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            return addr, port
+
+    # No XAddr is bound to the responder: derive the port from the first
+    # http(s) XAddr if present, otherwise default to 80.
+    port = 80
+    for addr in xaddrs:
+        parsed = urlparse(addr)
+        if parsed.scheme in ("http", "https") and parsed.port is not None:
+            port = parsed.port
+            break
+    return f"http://{source_ip}:{port}{ONVIF_DEVICE_SERVICE_PATH}", port
+
+
 def parse_ws_discovery_response(
     xml_text: str,
     source_ip: str,
@@ -291,24 +324,17 @@ def parse_ws_discovery_response(
         ).strip()
 
         xaddrs = [addr for addr in xaddrs_text.split() if addr]
-        service_url = xaddrs[0] if xaddrs else ""
-        parsed = urlparse(service_url) if service_url else None
+        # Pin the probed URL to the source IP so a spoofed XAddr cannot
+        # redirect credentialed requests to an attacker-controlled host.
+        service_url, onvif_port = _safe_onvif_url_for_source(xaddrs, source_ip)
 
         matches.append(
             DiscoveredDevice(
-                ip=parsed.hostname if parsed and parsed.hostname else source_ip,
-                onvif_url=service_url or None,
+                ip=source_ip,
+                onvif_url=service_url,
                 endpoint=endpoint or None,
                 ws_port=source_port,
-                onvif_port=(
-                    parsed.port
-                    if parsed and parsed.port is not None
-                    else 443
-                    if parsed and parsed.scheme == "https"
-                    else 80
-                    if parsed
-                    else None
-                ),
+                onvif_port=onvif_port,
                 types=[item for item in types_text.split() if item],
                 scopes=[item for item in scopes_text.split() if item],
                 xaddrs=xaddrs,
@@ -444,7 +470,14 @@ async def check_onvif_url(
     password: str | None = None,
     timeout: float = 5.0,
 ) -> DiscoveredDevice | None:
-    """Check whether the given ONVIF device service URL is reachable."""
+    """Check whether the given ONVIF device service URL is reachable.
+
+    Credentials are sent last: the endpoint is first probed anonymously so the
+    camera password is never sprayed onto a host that has not proven itself to
+    be an ONVIF service. Credentials are only replayed when the anonymous probe
+    is challenged with 401 (a real ONVIF endpoint asking for auth). If the
+    anonymous probe already returns 200, the credentials are not sent at all.
+    """
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -453,12 +486,12 @@ async def check_onvif_url(
     if not parsed.hostname:
         return None
 
+    # Anonymous probe first: do not disclose credentials until the endpoint
+    # behaves like a real ONVIF service.
     result = await send_onvif_request(
         session=session,
         url=url,
         body=ONVIF_GET_DEVICE_INFO_BODY,
-        username=username,
-        password=password,
         timeout=timeout,
     )
     if result is None:
@@ -467,6 +500,22 @@ async def check_onvif_url(
 
     if response_status not in (200, 401):
         return None
+
+    # Only replay credentials when the endpoint challenged the anonymous
+    # probe with 401; a 200 means the device answered without auth.
+    if response_status == 401 and (username or password):
+        auth_result = await send_onvif_request(
+            session=session,
+            url=url,
+            body=ONVIF_GET_DEVICE_INFO_BODY,
+            username=username,
+            password=password,
+            timeout=timeout,
+        )
+        if auth_result is not None:
+            auth_status, auth_text = auth_result
+            if auth_status in (200, 401):
+                response_status, response_text = auth_status, auth_text
 
     device_info = parse_device_information(response_text)
     return DiscoveredDevice(
