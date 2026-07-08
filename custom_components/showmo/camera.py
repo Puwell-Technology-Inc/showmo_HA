@@ -12,7 +12,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_platform
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import build_rtsp_url_with_credentials
@@ -24,8 +23,6 @@ from .const import (
     ATTR_TILT,
     ATTR_ZOOM,
     DOMAIN,
-    MANUFACTURER,
-    MODEL,
     PTZ_MOVE_CONTINUOUS,
     PTZ_MOVE_GOTO_HOME,
     PTZ_MOVE_GOTO_PRESET,
@@ -33,6 +30,7 @@ from .const import (
     PTZ_MOVE_STOP,
     SERVICE_PTZ,
 )
+from .entity import build_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,16 +100,7 @@ class ShowMoCamera(Camera):
         )
         self._api = runtime_data["api"]
 
-        # Device info
-        serial = entry.data.get("serial")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, serial or entry.entry_id)},
-            name=entry.title,
-            manufacturer=entry.data.get("manufacturer") or MANUFACTURER,
-            model=entry.data.get("model") or MODEL,
-            sw_version=entry.data.get("firmware"),
-            serial_number=serial,
-        )
+        self._attr_device_info = build_device_info(entry)
 
     async def stream_source(self) -> str | None:
         """Return the stream source URL."""

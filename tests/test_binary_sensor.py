@@ -9,6 +9,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 
 from custom_components.showmo.binary_sensor import ShowMoMotionBinarySensor, async_setup_entry
+from custom_components.showmo.camera import ShowMoCamera
 from custom_components.showmo.const import DOMAIN
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -114,6 +115,43 @@ async def test_async_setup_entry_skips_entity_when_motion_is_unsupported(hass) -
 
     assert entities == []
     motion.async_start.assert_not_awaited()
+
+
+async def test_device_info_matches_camera(hass) -> None:
+    """Both platforms must register identical device metadata for the same device.
+
+    Otherwise the last entity to load overwrites the shared device page.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Front Door",
+        data={
+            CONF_NAME: "Front Door",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "123456",
+            "host": "192.168.8.120",
+            "port": 554,
+            "path": "/live0_0.sdp",
+            "serial": "sn-406A8EFF7512",
+            "manufacturer": "puwell",
+            "model": "WIN2",
+            "firmware": "V5.32.2",
+        },
+    )
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"api": AsyncMock()}
+
+    camera = ShowMoCamera(hass, entry)
+    sensor = ShowMoMotionBinarySensor(entry, MockMotionCoordinator())
+
+    keys = ("identifiers", "name", "manufacturer", "model", "sw_version")
+    for key in keys:
+        assert camera.device_info[key] == sensor.device_info[key]
+
+    # Discovered metadata (not the hardcoded defaults) reaches both platforms.
+    assert sensor.device_info["manufacturer"] == "puwell"
+    assert sensor.device_info["model"] == "WIN2"
+    assert sensor.device_info["sw_version"] == "V5.32.2"
 
 
 async def test_motion_binary_sensor_removes_listener_on_removal(hass) -> None:

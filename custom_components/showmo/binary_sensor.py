@@ -8,10 +8,10 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, MANUFACTURER, MODEL
+from .const import DOMAIN
+from .entity import build_device_info
 from .motion import ShowMoMotionCoordinator
 
 
@@ -42,13 +42,7 @@ class ShowMoMotionBinarySensor(BinarySensorEntity):
         self._motion = motion
         serial = entry.data.get("serial") or entry.entry_id
         self._attr_unique_id = f"{serial}_motion"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, serial)},
-            name=entry.title,
-            manufacturer=MANUFACTURER,
-            model=MODEL,
-            serial_number=entry.data.get("serial"),
-        )
+        self._attr_device_info = build_device_info(entry)
         self._remove_listener = None
 
     @property
