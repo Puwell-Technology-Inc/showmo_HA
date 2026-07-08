@@ -9,7 +9,7 @@ import voluptuous as vol
 
 from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -23,7 +23,6 @@ from .const import (
     ATTR_PRESET,
     ATTR_TILT,
     ATTR_ZOOM,
-    DEFAULT_NAME,
     DOMAIN,
     MANUFACTURER,
     MODEL,
@@ -86,9 +85,10 @@ class ShowMoCamera(Camera):
         runtime_data = hass.data[DOMAIN][entry.entry_id]
         self._attr_unique_id = entry.data.get("serial") or entry.entry_id
 
-        # Entity name
-        name = entry.data.get(CONF_NAME) or DEFAULT_NAME
-        self._attr_name = name if name != DEFAULT_NAME else None
+        # The camera is the device's primary entity, so it inherits the device
+        # name (entry.title). Giving it its own name would double the label,
+        # e.g. "Front Door Front Door".
+        self._attr_name = None
 
         # Build stream URL with credentials
         host = entry.data["host"]
@@ -107,8 +107,9 @@ class ShowMoCamera(Camera):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, serial or entry.entry_id)},
             name=entry.title,
-            manufacturer=MANUFACTURER,
-            model=MODEL,
+            manufacturer=entry.data.get("manufacturer") or MANUFACTURER,
+            model=entry.data.get("model") or MODEL,
+            sw_version=entry.data.get("firmware"),
             serial_number=serial,
         )
 

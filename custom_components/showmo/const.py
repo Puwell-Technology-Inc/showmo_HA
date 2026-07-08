@@ -6,6 +6,11 @@ CONF_RTSP_URL = "rtsp_url"
 
 DEFAULT_NAME = "Live"
 
+# Factory-default camera credentials. The scan step falls back to these when the
+# user leaves the fields blank; users who changed the password enter their own.
+DEFAULT_USERNAME = "admin"
+DEFAULT_PASSWORD = "123456"
+
 MANUFACTURER = "ShowMo"
 MODEL = "WinEye"
 

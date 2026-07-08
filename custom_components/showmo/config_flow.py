@@ -21,7 +21,13 @@ from .api import (
     build_rtsp_url_without_credentials,
     parse_rtsp_url,
 )
-from .const import CONF_RTSP_URL, DEFAULT_NAME, DOMAIN
+from .const import (
+    CONF_RTSP_URL,
+    DEFAULT_NAME,
+    DEFAULT_PASSWORD,
+    DEFAULT_USERNAME,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +44,9 @@ def _build_manual_schema(
     return vol.Schema(
         {
             vol.Optional(CONF_NAME, default=defaults.get(CONF_NAME, "")): str,
-            vol.Required(CONF_RTSP_URL, default=defaults.get(CONF_RTSP_URL, "")): str,
+            vol.Required(
+                CONF_RTSP_URL, default=defaults.get(CONF_RTSP_URL) or "rtsp://"
+            ): str,
             vol.Required(CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")): str,
             vol.Required(CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")): str,
         }
@@ -127,8 +135,10 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            username = user_input.get(CONF_USERNAME, "").strip()
-            password = user_input.get(CONF_PASSWORD, "")
+            # A blank field means "use the factory default" — fall back per field
+            # so a user who only changed the password can still leave username blank.
+            username = user_input.get(CONF_USERNAME, "").strip() or DEFAULT_USERNAME
+            password = user_input.get(CONF_PASSWORD, "") or DEFAULT_PASSWORD
             subnet = ShowMoApiClient.get_local_subnet()
             if subnet is None:
                 errors["base"] = "cannot_determine_subnet"
@@ -137,8 +147,8 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
                     devices = await ShowMoApiClient.discover_devices(
                         timeout=3.0,
                         subnet=subnet,
-                        username=username or None,
-                        password=password or None,
+                        username=username,
+                        password=password,
                     )
                 except AuthenticationError:
                     errors["base"] = "invalid_auth"
@@ -342,6 +352,7 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
                 build_rtsp_url_without_credentials(host, port, path),
             )
 
+        device = self._selected_device or {}
         return (
             self.async_create_entry(
                 title=name,
@@ -354,6 +365,9 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
                     "port": port,
                     "path": path,
                     "serial": serial,
+                    "manufacturer": device.get("manufacturer"),
+                    "model": device.get("model"),
+                    "firmware": device.get("firmware"),
                 },
             ),
             errors,
@@ -435,6 +449,9 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
                                     "port": port,
                                     "path": path,
                                     "serial": serial,
+                                    "manufacturer": entry.data.get("manufacturer"),
+                                    "model": entry.data.get("model"),
+                                    "firmware": entry.data.get("firmware"),
                                 },
                                 reason="reconfigure_successful",
                             )

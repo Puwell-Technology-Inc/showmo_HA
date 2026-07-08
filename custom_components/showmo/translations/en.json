@@ -10,14 +10,14 @@
       },
       "scan": {
         "title": "Scan Network",
-        "description": "Scan your local network for ONVIF cameras. The integration will automatically use the local subnet. Username and password are optional here, but providing them helps fetch model and serial information during discovery.",
+        "description": "Scan your local network for ONVIF cameras. The local subnet is detected automatically.\n\nLeave the username and password blank to use the camera's factory default credentials (username admin). If you changed the camera's password, enter the new username and password instead.",
         "data": {
           "username": "Username",
           "password": "Password"
         },
         "data_description": {
-          "username": "Optional camera username used to fetch ONVIF device information",
-          "password": "Optional camera password used to fetch ONVIF device information"
+          "username": "Leave blank to use the default 'admin'. Enter your username if you changed it.",
+          "password": "Leave blank to use the factory default password. Enter your new password if you changed it."
         }
       },
       "pick_device": {
@@ -66,7 +66,7 @@
     },
     "error": {
       "invalid_rtsp_url": "Invalid RTSP URL. Must start with rtsp://",
-      "invalid_auth": "Username and password are required",
+      "invalid_auth": "Invalid username or password. Check the camera credentials and try again.",
       "cannot_connect": "Failed to connect to the camera",
       "discovery_failed": "Camera discovery failed. Check your network and try again",
       "invalid_device": "The selected device is no longer available. Please rescan",

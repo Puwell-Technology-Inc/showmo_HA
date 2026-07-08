@@ -31,6 +31,25 @@ def _build_entry() -> MockConfigEntry:
     )
 
 
+def _build_discovered_entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Front Door",
+        data={
+            CONF_NAME: "Front Door",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "123456",
+            "host": "192.168.8.120",
+            "port": 554,
+            "path": "/live0_0.sdp",
+            "serial": "sn-406A8EFF7512",
+            "manufacturer": "puwell",
+            "model": "WIN2",
+            "firmware": "V5.32.2",
+        },
+    )
+
+
 def _seed_runtime_data(hass, entry: MockConfigEntry, api=None):
     api = api or AsyncMock()
     hass.data.setdefault(DOMAIN, {})
@@ -60,6 +79,21 @@ async def test_async_setup_entry_adds_camera_with_stream_source(hass) -> None:
     assert entity.unique_id == "sn-406A8EFF7512"
     assert entity.device_info["identifiers"] == {(DOMAIN, "sn-406A8EFF7512")}
     platform.async_register_entity_service.assert_called_once()
+
+
+async def test_camera_name_not_doubled_and_surfaces_discovered_metadata(hass) -> None:
+    """The primary entity inherits the device name (no doubling) and shows discovery data."""
+    entry = _build_discovered_entry()
+    _seed_runtime_data(hass, entry)
+
+    entity = ShowMoCamera(hass, entry)
+
+    # No own entity name → HA shows just the device name, not "Front Door Front Door".
+    assert entity._attr_name is None
+    assert entity.device_info["name"] == "Front Door"
+    assert entity.device_info["manufacturer"] == "puwell"
+    assert entity.device_info["model"] == "WIN2"
+    assert entity.device_info["sw_version"] == "V5.32.2"
 
 
 async def test_perform_ptz_continuous_move_auto_stops(hass) -> None:

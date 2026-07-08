@@ -167,7 +167,37 @@ async def test_scan_flow_creates_entry_after_device_confirmation(hass) -> None:
         "port": 554,
         "path": "/live0_0.sdp",
         "serial": DISCOVERED_DEVICE["serial"],
+        "manufacturer": DISCOVERED_DEVICE["manufacturer"],
+        "model": DISCOVERED_DEVICE["model"],
+        "firmware": DISCOVERED_DEVICE["firmware"],
     }
+
+
+async def test_scan_flow_blank_credentials_fall_back_to_factory_default(hass) -> None:
+    """Leaving scan credentials blank should probe with the factory default admin/123456."""
+    discover = AsyncMock(return_value=[DISCOVERED_DEVICE])
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_local_subnet",
+            return_value="192.168.8.0/24",
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "discover_devices",
+            discover,
+        ),
+    ):
+        result = await _start_scan_flow(hass)
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "", CONF_PASSWORD: ""},
+        )
+
+    assert result["step_id"] == "pick_device"
+    assert discover.await_args.kwargs["username"] == "admin"
+    assert discover.await_args.kwargs["password"] == "123456"
 
 
 async def test_manual_flow_rejects_invalid_rtsp_url(hass) -> None:
@@ -401,6 +431,9 @@ async def test_reconfigure_updates_existing_entry(hass) -> None:
             "port": 554,
             "path": "/live0_0.sdp",
             "serial": "old-serial",
+            "manufacturer": "puwell",
+            "model": "WIN2",
+            "firmware": "V5.32.2",
         },
     )
     entry.add_to_hass(hass)
@@ -464,6 +497,9 @@ async def test_reconfigure_updates_existing_entry(hass) -> None:
         "port": 554,
         "path": "/live0_0.sdp",
         "serial": "new-serial",
+        "manufacturer": "puwell",
+        "model": "WIN2",
+        "firmware": "V5.32.2",
     }
 
 
