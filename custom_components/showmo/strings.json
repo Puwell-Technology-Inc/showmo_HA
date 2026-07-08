@@ -76,7 +76,8 @@
     },
     "abort": {
       "already_configured": "This camera is already configured",
-      "reconfigure_failed": "Reconfiguration failed"
+      "reconfigure_failed": "Reconfiguration failed",
+      "wrong_device": "The detected camera is not the same device as the one originally configured. Reconfigure is only for updating the existing camera, not switching to a different one."
     }
   },
   "services": {

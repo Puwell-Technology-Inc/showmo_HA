@@ -416,8 +416,22 @@ async def test_scan_flow_rejects_invalid_selected_device(hass) -> None:
     assert result["errors"] == {"base": "invalid_device"}
 
 
+def _fake_update_reload_and_abort_factory(hass, entry):
+    """Build a stand-in for async_update_reload_and_abort that mutates the entry."""
+
+    def _fake_update_reload_and_abort(flow, updated_entry, **kwargs):
+        hass.config_entries.async_update_entry(
+            entry=updated_entry,
+            title=kwargs["title"],
+            data=kwargs["data"],
+        )
+        return flow.async_abort(reason=kwargs["reason"])
+
+    return _fake_update_reload_and_abort
+
+
 async def test_reconfigure_updates_existing_entry(hass) -> None:
-    """Reconfigure should update entry data and abort successfully."""
+    """Reconfigure should update entry data for the same camera and abort OK."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Front Door",
@@ -438,14 +452,6 @@ async def test_reconfigure_updates_existing_entry(hass) -> None:
     )
     entry.add_to_hass(hass)
 
-    def _fake_update_reload_and_abort(flow, updated_entry, **kwargs):
-        hass.config_entries.async_update_entry(
-            entry=updated_entry,
-            title=kwargs["title"],
-            data=kwargs["data"],
-        )
-        return flow.async_abort(reason=kwargs["reason"])
-
     with (
         patch.object(
             config_flow_module.ShowMoApiClient,
@@ -455,13 +461,14 @@ async def test_reconfigure_updates_existing_entry(hass) -> None:
         patch.object(
             config_flow_module.ShowMoApiClient,
             "get_device_serial",
-            AsyncMock(return_value="new-serial"),
+            # Same physical camera (same serial), only IP/credentials changed.
+            AsyncMock(return_value="old-serial"),
         ),
         patch.object(
             config_flow_module.ShowMoConfigFlow,
             "async_update_reload_and_abort",
             autospec=True,
-            side_effect=_fake_update_reload_and_abort,
+            side_effect=_fake_update_reload_and_abort_factory(hass, entry),
         ) as mock_update_reload_and_abort,
     ):
         result = await hass.config_entries.flow.async_init(
@@ -488,6 +495,7 @@ async def test_reconfigure_updates_existing_entry(hass) -> None:
     assert result["reason"] == "reconfigure_successful"
     mock_update_reload_and_abort.assert_called_once()
     assert entry.title == "Garage"
+    assert entry.unique_id == "old-serial"
     assert entry.data == {
         CONF_NAME: "Garage",
         CONF_RTSP_URL: "rtsp://192.168.8.121/live0_0.sdp",
@@ -496,11 +504,133 @@ async def test_reconfigure_updates_existing_entry(hass) -> None:
         "host": "192.168.8.121",
         "port": 554,
         "path": "/live0_0.sdp",
-        "serial": "new-serial",
+        "serial": "old-serial",
         "manufacturer": "puwell",
         "model": "WIN2",
         "firmware": "V5.32.2",
     }
+
+
+async def test_reconfigure_preserves_serial_when_probe_returns_none(hass) -> None:
+    """A transient serial fetch failure must keep the stored serial, not None."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Front Door",
+        unique_id="old-serial",
+        data={
+            CONF_NAME: "Front Door",
+            CONF_RTSP_URL: "rtsp://192.168.8.120/live0_0.sdp",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "123456",
+            "host": "192.168.8.120",
+            "port": 554,
+            "path": "/live0_0.sdp",
+            "serial": "old-serial",
+            "manufacturer": "puwell",
+            "model": "WIN2",
+            "firmware": "V5.32.2",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "test_connection",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_device_serial",
+            AsyncMock(return_value=None),
+        ),
+        patch.object(
+            config_flow_module.ShowMoConfigFlow,
+            "async_update_reload_and_abort",
+            autospec=True,
+            side_effect=_fake_update_reload_and_abort_factory(hass, entry),
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": RECONFIGURE_SOURCE,
+                "entry_id": entry.entry_id,
+            },
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_NAME: "Front Door",
+                CONF_RTSP_URL: "rtsp://192.168.8.121/live0_0.sdp",
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "123456",
+            },
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data["serial"] == "old-serial"
+    assert entry.unique_id == "old-serial"
+
+
+async def test_reconfigure_aborts_on_different_device(hass) -> None:
+    """Reconfigure pointed at a different camera should abort as wrong_device."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Front Door",
+        unique_id="old-serial",
+        data={
+            CONF_NAME: "Front Door",
+            CONF_RTSP_URL: "rtsp://192.168.8.120/live0_0.sdp",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "123456",
+            "host": "192.168.8.120",
+            "port": 554,
+            "path": "/live0_0.sdp",
+            "serial": "old-serial",
+            "manufacturer": "puwell",
+            "model": "WIN2",
+            "firmware": "V5.32.2",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "test_connection",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_device_serial",
+            AsyncMock(return_value="new-serial"),
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": RECONFIGURE_SOURCE,
+                "entry_id": entry.entry_id,
+            },
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_NAME: "Garage",
+                CONF_RTSP_URL: "rtsp://192.168.8.121/live0_0.sdp",
+                CONF_USERNAME: "viewer",
+                CONF_PASSWORD: "secret",
+            },
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_device"
+    # The entry must be left untouched when the camera identity mismatches.
+    assert entry.unique_id == "old-serial"
+    assert entry.data["serial"] == "old-serial"
+    assert entry.data["host"] == "192.168.8.120"
 
 
 async def test_reconfigure_reports_connection_failure(hass) -> None:

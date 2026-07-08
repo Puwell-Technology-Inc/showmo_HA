@@ -286,11 +286,19 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def _async_finish_user_step(
+    async def _async_validate_camera_input(
         self,
         user_input: dict[str, Any],
-    ) -> tuple[ConfigFlowResult | None, dict[str, str]]:
-        """Validate user input and create the config entry."""
+    ) -> tuple[dict[str, Any] | None, dict[str, str]]:
+        """Validate the shared RTSP/credential input for a camera.
+
+        Parses the RTSP URL, applies embedded-credential fallback, probes the
+        camera and fetches its serial. Returns a dict of validated fields
+        (name/rtsp_url/username/password/host/port/path/serial) on success, or
+        ``None`` plus an ``errors`` mapping. Callers layer their own duplicate
+        or reconfigure handling on top. Shared by the manual and reconfigure
+        steps so both paths validate identically.
+        """
         errors: dict[str, str] = {}
 
         rtsp_url = user_input[CONF_RTSP_URL].strip()
@@ -343,28 +351,46 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "unknown"
             return None, errors
 
-        if serial:
-            await self.async_set_unique_id(serial)
-            self._abort_if_unique_id_configured()
-        else:
+        if not serial:
             _LOGGER.warning(
                 "Could not fetch serial for %s. Duplicate detection is limited.",
                 build_rtsp_url_without_credentials(host, port, path),
             )
 
+        return (
+            {
+                CONF_NAME: name,
+                CONF_RTSP_URL: rtsp_url,
+                CONF_USERNAME: username,
+                CONF_PASSWORD: password,
+                "host": host,
+                "port": port,
+                "path": path,
+                "serial": serial,
+            },
+            errors,
+        )
+
+    async def _async_finish_user_step(
+        self,
+        user_input: dict[str, Any],
+    ) -> tuple[ConfigFlowResult | None, dict[str, str]]:
+        """Validate user input and create the config entry."""
+        validated, errors = await self._async_validate_camera_input(user_input)
+        if validated is None:
+            return None, errors
+
+        serial = validated["serial"]
+        if serial:
+            await self.async_set_unique_id(serial)
+            self._abort_if_unique_id_configured()
+
         device = self._selected_device or {}
         return (
             self.async_create_entry(
-                title=name,
+                title=validated[CONF_NAME],
                 data={
-                    CONF_NAME: name,
-                    CONF_RTSP_URL: rtsp_url,
-                    CONF_USERNAME: username,
-                    CONF_PASSWORD: password,
-                    "host": host,
-                    "port": port,
-                    "path": path,
-                    "serial": serial,
+                    **validated,
                     "manufacturer": device.get("manufacturer"),
                     "model": device.get("model"),
                     "firmware": device.get("firmware"),
@@ -385,76 +411,44 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            rtsp_url = user_input[CONF_RTSP_URL].strip()
-            username = user_input[CONF_USERNAME].strip()
-            password = user_input[CONF_PASSWORD]
-            name = user_input.get(CONF_NAME, "").strip() or DEFAULT_NAME
+            validated, errors = await self._async_validate_camera_input(user_input)
+            if validated is not None:
+                old_serial = entry.data.get("serial")
+                # Keep the stored serial when this probe could not fetch one, so
+                # a transient ONVIF hiccup during reconfigure never rewrites the
+                # entity unique_id (which is derived from the serial).
+                serial = validated["serial"] or old_serial
 
-            if not rtsp_url.startswith("rtsp://"):
-                errors[CONF_RTSP_URL] = "invalid_rtsp_url"
-            else:
-                host, port, embedded_user, embedded_pass, path = parse_rtsp_url(
-                    rtsp_url
+                # Guard against pointing the entry at a different physical
+                # camera: if we detected a non-empty serial that disagrees with
+                # this entry's identity, abort instead of silently taking over.
+                expected = entry.unique_id or old_serial
+                if (
+                    validated["serial"]
+                    and expected
+                    and validated["serial"] != expected
+                ):
+                    return self.async_abort(reason="wrong_device")
+
+                # Backfill the entry's unique_id if it never had one and we now
+                # know the serial, keeping unique_id and data["serial"] aligned.
+                if serial and entry.unique_id != serial:
+                    self.hass.config_entries.async_update_entry(
+                        entry, unique_id=serial
+                    )
+
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=validated[CONF_NAME],
+                    data={
+                        **validated,
+                        "serial": serial,
+                        "manufacturer": entry.data.get("manufacturer"),
+                        "model": entry.data.get("model"),
+                        "firmware": entry.data.get("firmware"),
+                    },
+                    reason="reconfigure_successful",
                 )
-
-                if not host:
-                    errors[CONF_RTSP_URL] = "invalid_rtsp_url"
-                else:
-                    if embedded_user and not username:
-                        username = embedded_user
-                    if embedded_pass and not password:
-                        password = embedded_pass
-
-                    if not username or not password:
-                        errors["base"] = "invalid_auth"
-                    else:
-                        session = async_get_clientsession(self.hass)
-                        client = ShowMoApiClient(
-                            host=host,
-                            port=port,
-                            username=username,
-                            password=password,
-                            session=session,
-                        )
-                        serial = entry.data.get("serial")
-                        try:
-                            if not await client.test_connection():
-                                errors["base"] = "cannot_connect"
-                            else:
-                                serial = await client.get_device_serial()
-                        except AuthenticationError:
-                            errors["base"] = "invalid_auth"
-                        except (aiohttp.ClientError, OSError, TimeoutError, ValueError) as err:
-                            _log_flow_exception("Camera reconfigure validation failed", err)
-                            errors["base"] = "cannot_connect"
-                        except Exception as err:  # pragma: no cover - defensive guard
-                            _LOGGER.exception("Unexpected reconfigure validation failure")
-                            errors["base"] = "unknown"
-                        else:
-                            if errors:
-                                return self.async_show_form(
-                                    step_id="reconfigure",
-                                    data_schema=_build_manual_schema(user_input),
-                                    errors=errors,
-                                )
-                            return self.async_update_reload_and_abort(
-                                entry,
-                                title=name,
-                                data={
-                                    CONF_NAME: name,
-                                    CONF_RTSP_URL: rtsp_url,
-                                    CONF_USERNAME: username,
-                                    CONF_PASSWORD: password,
-                                    "host": host,
-                                    "port": port,
-                                    "path": path,
-                                    "serial": serial,
-                                    "manufacturer": entry.data.get("manufacturer"),
-                                    "model": entry.data.get("model"),
-                                    "firmware": entry.data.get("firmware"),
-                                },
-                                reason="reconfigure_successful",
-                            )
 
         defaults = {
             CONF_NAME: entry.data.get(CONF_NAME, ""),
