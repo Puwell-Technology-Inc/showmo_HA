@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 
 def parse_rtsp_url(rtsp_url: str) -> tuple[str, int, str | None, str | None, str]:
@@ -10,8 +10,10 @@ def parse_rtsp_url(rtsp_url: str) -> tuple[str, int, str | None, str | None, str
     parsed = urlparse(rtsp_url)
     host = parsed.hostname or ""
     port = parsed.port or 554
-    embedded_user = parsed.username
-    embedded_pass = parsed.password
+    # urlparse does not percent-decode userinfo; decode so callers get plaintext
+    # credentials that match what the user typed (used for ONVIF/HTTP auth).
+    embedded_user = unquote(parsed.username) if parsed.username is not None else None
+    embedded_pass = unquote(parsed.password) if parsed.password is not None else None
 
     clean_path = parsed.path
     if parsed.query:
@@ -31,9 +33,14 @@ def build_rtsp_url_with_credentials(
     if not path.startswith("/"):
         path = f"/{path}"
 
+    # Percent-encode userinfo so reserved characters (@ : / ? # space, ...) in
+    # credentials do not corrupt authority parsing in urlparse/ffmpeg.
+    safe_user = quote(username, safe="")
+    safe_pass = quote(password, safe="")
+
     if port == 554:
-        return f"rtsp://{username}:{password}@{host}{path}"
-    return f"rtsp://{username}:{password}@{host}:{port}{path}"
+        return f"rtsp://{safe_user}:{safe_pass}@{host}{path}"
+    return f"rtsp://{safe_user}:{safe_pass}@{host}:{port}{path}"
 
 
 def build_rtsp_url_without_credentials(host: str, port: int, path: str) -> str:

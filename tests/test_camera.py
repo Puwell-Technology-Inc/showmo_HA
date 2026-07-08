@@ -81,6 +81,43 @@ async def test_async_setup_entry_adds_camera_with_stream_source(hass) -> None:
     platform.async_register_entity_service.assert_called_once()
 
 
+async def test_stream_source_encodes_special_character_password(hass) -> None:
+    """A password with reserved characters must yield a parseable stream URL."""
+    from urllib.parse import urlparse
+
+    from custom_components.showmo.pyshowmo.rtsp import parse_rtsp_url
+
+    password = "p/a?s#s@w :d"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Front Door",
+        data={
+            CONF_NAME: "Front Door",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: password,
+            "host": "192.168.8.120",
+            "port": 554,
+            "path": "/live0_0.sdp",
+            "serial": "sn-406A8EFF7512",
+        },
+    )
+    _seed_runtime_data(hass, entry)
+
+    entity = ShowMoCamera(hass, entry)
+    stream_url = await entity.stream_source()
+
+    # Authority stays intact despite reserved chars in the password.
+    parsed = urlparse(stream_url)
+    assert parsed.hostname == "192.168.8.120"
+    assert parsed.path == "/live0_0.sdp"
+
+    # And the encoded credentials round-trip back to the stored plaintext.
+    host, _port, user, pw, path = parse_rtsp_url(stream_url)
+    assert host == "192.168.8.120"
+    assert user == "admin"
+    assert pw == password
+
+
 async def test_camera_name_not_doubled_and_surfaces_discovered_metadata(hass) -> None:
     """The primary entity inherits the device name (no doubling) and shows discovery data."""
     entry = _build_discovered_entry()
