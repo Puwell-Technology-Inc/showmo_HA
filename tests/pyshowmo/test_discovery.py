@@ -97,6 +97,32 @@ async def test_discover_devices_deduplicates(monkeypatch):
     assert [device.ip for device in results] == ["192.168.8.120", "192.168.8.121"]
 
 
+@pytest.mark.asyncio
+async def test_discover_devices_dedupes_when_serial_only_from_scan(monkeypatch):
+    """One IP reached by both paths must appear once even if only the network
+    scan resolves its serial (ws-discovery verification failed → serial None)."""
+
+    async def fake_discover_onvif_devices(**kwargs):
+        return [
+            DiscoveredDevice(ip="192.168.8.120", serial=None, onvif=True),
+        ]
+
+    async def fake_scan_network(*args, **kwargs):
+        return [
+            DiscoveredDevice(ip="192.168.8.120", serial="sn-1", onvif=True),
+        ]
+
+    monkeypatch.setattr(
+        "pyshowmo.discovery.discover_onvif_devices",
+        fake_discover_onvif_devices,
+    )
+    monkeypatch.setattr("pyshowmo.discovery.scan_network", fake_scan_network)
+
+    results = await discover_devices(subnet="192.168.8.0/24")
+
+    assert [device.ip for device in results] == ["192.168.8.120"]
+
+
 def test_ws_discovery_pins_url_to_source_ip_when_xaddrs_spoofed() -> None:
     # A spoofed ProbeMatch points XAddrs at an attacker host (and even an
     # off-network URL). The parsed URL must be rebound to the UDP source IP.

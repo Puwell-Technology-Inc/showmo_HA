@@ -225,7 +225,11 @@ async def discover_devices(
 ) -> list[DiscoveredDevice]:
     """Discover devices via WS-Discovery first, then network scan fallback."""
     discovered: list[DiscoveredDevice] = []
-    seen: set[tuple[str, str]] = set()
+    # A single IP is one device on a LAN scan, so dedupe by IP alone. Keying on
+    # serial too would split one camera into two entries when one discovery path
+    # resolves its serial and the other does not (e.g. ws-discovery verification
+    # times out but the network scan reads the serial number).
+    seen: set[str] = set()
 
     try:
         ws_results = await discover_onvif_devices(
@@ -238,8 +242,7 @@ async def discover_devices(
         ws_results = []
 
     for result in ws_results:
-        dedupe_key = (result.ip, result.serial or "")
-        seen.add(dedupe_key)
+        seen.add(result.ip)
         discovered.append(result)
 
     effective_subnet = subnet or get_local_subnet(local_ip=local_ip)
@@ -252,10 +255,9 @@ async def discover_devices(
         password=password,
     )
     for result in scan_results:
-        dedupe_key = (result.ip, result.serial or "")
-        if dedupe_key in seen:
+        if result.ip in seen:
             continue
-        seen.add(dedupe_key)
+        seen.add(result.ip)
         discovered.append(result)
 
     return discovered

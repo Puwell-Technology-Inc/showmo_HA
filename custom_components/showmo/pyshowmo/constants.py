@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 ONVIF_DEVICE_SERVICE_PATH = "/onvif/device_service"
-ONVIF_PTZ_SERVICE_PATH = "/onvif/ptz"
-ONVIF_MEDIA_SERVICE_PATH = "/onvif/media"
 WS_DISCOVERY_MULTICAST_ADDR = "239.255.255.250"
 WS_DISCOVERY_MULTICAST_PORT = 3702
 COMMON_SNAPSHOT_PATHS = (

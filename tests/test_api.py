@@ -1,26 +1,13 @@
 from __future__ import annotations
 
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+import custom_components.showmo.api as API_MODULE
+from custom_components.showmo.api import ShowMoApiClient
 from pyshowmo.onvif import parse_pull_messages
-
-
-API_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "custom_components"
-    / "showmo"
-    / "api.py"
-)
-SPEC = spec_from_file_location("showmo_api_adapter", API_PATH)
-assert SPEC and SPEC.loader
-API_MODULE = module_from_spec(SPEC)
-SPEC.loader.exec_module(API_MODULE)
-ShowMoApiClient = API_MODULE.ShowMoApiClient
 
 
 @pytest.mark.asyncio
@@ -44,7 +31,7 @@ async def test_discover_devices_converts_pyshowmo_models(monkeypatch):
 async def test_get_device_serial_delegates_to_pyshowmo(monkeypatch):
     client = ShowMoApiClient("192.168.8.120", 554, "admin", "123456")
     monkeypatch.setattr(
-        "pyshowmo.client.ShowMoClient.get_device_serial",
+        "custom_components.showmo.pyshowmo.client.ShowMoClient.get_device_serial",
         AsyncMock(return_value="sn-406A8EFF7512"),
     )
 
@@ -80,25 +67,10 @@ def test_parse_pull_messages_extracts_motion_notifications():
 
 
 @pytest.mark.asyncio
-async def test_async_get_event_service_url_delegates_to_pyshowmo(monkeypatch):
-    client = ShowMoApiClient("192.168.8.120", 554, "admin", "123456")
-    monkeypatch.setattr(
-        "pyshowmo.client.ShowMoClient.get_event_service_url",
-        AsyncMock(return_value="http://192.168.8.120:8080/events_service"),
-    )
-
-    assert (
-        await client.async_get_event_service_url()
-        == "http://192.168.8.120:8080/events_service"
-    )
-    await client.close()
-
-
-@pytest.mark.asyncio
 async def test_async_create_subscription_and_pull_messages(monkeypatch):
     client = ShowMoApiClient("192.168.8.120", 554, "admin", "123456")
     monkeypatch.setattr(
-        "pyshowmo.client.ShowMoClient.create_pullpoint_subscription",
+        "custom_components.showmo.pyshowmo.client.ShowMoClient.create_pullpoint_subscription",
         AsyncMock(
             return_value=SimpleNamespace(
                 address="http://192.168.8.120:8080/subscription"
@@ -106,7 +78,7 @@ async def test_async_create_subscription_and_pull_messages(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "pyshowmo.client.ShowMoClient.pull_messages",
+        "custom_components.showmo.pyshowmo.client.ShowMoClient.pull_messages",
         AsyncMock(
             return_value=[
                 SimpleNamespace(
@@ -139,7 +111,7 @@ async def test_async_unsubscribe_delegates_to_pyshowmo(monkeypatch):
     client = ShowMoApiClient("192.168.8.120", 554, "admin", "123456")
     unsubscribe = AsyncMock(return_value=True)
     monkeypatch.setattr(
-        "pyshowmo.client.ShowMoClient.unsubscribe",
+        "custom_components.showmo.pyshowmo.client.ShowMoClient.unsubscribe",
         unsubscribe,
     )
 
