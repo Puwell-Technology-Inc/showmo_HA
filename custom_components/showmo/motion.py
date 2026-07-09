@@ -98,7 +98,13 @@ class ShowMoMotionCoordinator:
             return False
 
         if self._task is None:
-            self._task = self._hass.async_create_task(self._async_run())
+            # A long-lived poll loop: register it as a background task so HA's
+            # shutdown/unload cancels it instead of waiting out the 70s pull.
+            self._task = self._entry.async_create_background_task(
+                self._hass,
+                self._async_run(),
+                name="showmo motion pullpoint",
+            )
         return True
 
     async def async_stop(self) -> None:

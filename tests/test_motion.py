@@ -65,6 +65,32 @@ async def test_motion_start_returns_false_when_events_are_unsupported(hass) -> N
     assert coordinator.supported is False
 
 
+async def test_motion_start_uses_background_task(hass) -> None:
+    """The poll loop must run as an entry background task, not a tracked task.
+
+    A tracked task would make HA wait out the 70s pull on shutdown; a background
+    task is canceled automatically when the entry unloads or HA stops.
+    """
+    api = SimpleNamespace(
+        async_create_pullpoint_subscription=AsyncMock(
+            return_value="http://192.168.8.120:8080/subscription"
+        ),
+        async_pull_messages=AsyncMock(side_effect=asyncio.CancelledError()),
+        async_unsubscribe=AsyncMock(return_value=True),
+    )
+    entry = _build_entry()
+    entry.add_to_hass(hass)
+    coordinator = ShowMoMotionCoordinator(hass, entry, api)
+
+    with patch.object(
+        hass, "async_create_task", Mock(side_effect=AssertionError("used tracked task"))
+    ):
+        assert await coordinator.async_start() is True
+
+    assert coordinator._task in entry._background_tasks
+    await coordinator.async_stop()
+
+
 async def test_motion_run_updates_state_from_notifications(hass) -> None:
     """The coordinator should become available and reflect incoming motion."""
     now = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
@@ -126,7 +152,10 @@ async def test_motion_run_marks_unavailable_when_pull_messages_fail(hass) -> Non
 
 async def test_motion_remove_last_listener_schedules_stop(hass) -> None:
     """Removing the last listener should schedule coordinator shutdown."""
-    api = SimpleNamespace(async_get_event_service_url=AsyncMock(return_value="http://events"))
+    # The api double is never touched by this test; use a real method name.
+    api = SimpleNamespace(
+        async_create_pullpoint_subscription=AsyncMock(return_value="http://events")
+    )
     coordinator = ShowMoMotionCoordinator(hass, _build_entry(), api)
     coordinator._task = object()
     coordinator.async_stop = AsyncMock()

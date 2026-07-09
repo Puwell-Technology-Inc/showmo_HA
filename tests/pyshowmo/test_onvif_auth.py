@@ -21,6 +21,7 @@ from pyshowmo.onvif import (
     parse_service_url,
     ptz_continuous_move,
     ptz_stop,
+    send_onvif_request,
 )
 
 
@@ -243,3 +244,29 @@ async def test_ptz_command_returns_false_on_fault() -> None:
         password="123456",
     )
     assert ok is False
+
+
+class DecodeFailingResponse(FakeResponse):
+    """Response whose body cannot be decoded, e.g. GBK bytes without charset."""
+
+    async def text(self) -> str:
+        raise UnicodeDecodeError("utf-8", b"\xc6\xd5", 0, 1, "invalid start byte")
+
+
+class DecodeFailingSession:
+    """Session returning a response that raises on ``text()``."""
+
+    def post(self, url, data=None, auth=None, headers=None, timeout=None):  # noqa: ANN001
+        return DecodeFailingResponse(200, "")
+
+
+async def test_send_onvif_request_returns_none_on_decode_error() -> None:
+    """A non-UTF-8 body must return None, honoring the failure contract."""
+    result = await send_onvif_request(
+        session=DecodeFailingSession(),
+        url="http://cam:8080/onvif/device_service",
+        body="<soap/>",
+        username="admin",
+        password="123456",
+    )
+    assert result is None

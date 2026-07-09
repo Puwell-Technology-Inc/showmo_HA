@@ -12,6 +12,11 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .api import (
     AuthenticationError,
@@ -35,6 +40,12 @@ ConfigFlowResult = FlowResult
 
 CONF_DEVICE = "device"
 
+# Masked input for camera passwords so credentials are not shown in cleartext
+# (e.g. during screen sharing). Reconfigure still prefills the stored password.
+_PASSWORD_SELECTOR = TextSelector(
+    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+)
+
 
 def _build_manual_schema(
     defaults: dict[str, Any] | None = None,
@@ -48,7 +59,9 @@ def _build_manual_schema(
                 CONF_RTSP_URL, default=defaults.get(CONF_RTSP_URL) or "rtsp://"
             ): str,
             vol.Required(CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")): str,
-            vol.Required(CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")): str,
+            vol.Required(
+                CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")
+            ): _PASSWORD_SELECTOR,
         }
     )
 
@@ -61,7 +74,9 @@ def _build_scan_schema(
     return vol.Schema(
         {
             vol.Optional(CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")): str,
-            vol.Optional(CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")): str,
+            vol.Optional(
+                CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")
+            ): _PASSWORD_SELECTOR,
         }
     )
 
@@ -274,7 +289,7 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            result, errors = await self._async_finish_user_step(user_input)
+            result, errors = await self._async_finish_manual_step(user_input)
             if result is not None:
                 return result
 
@@ -371,7 +386,7 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
             errors,
         )
 
-    async def _async_finish_user_step(
+    async def _async_finish_manual_step(
         self,
         user_input: dict[str, Any],
     ) -> tuple[ConfigFlowResult | None, dict[str, str]]:

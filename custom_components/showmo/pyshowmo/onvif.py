@@ -218,6 +218,11 @@ async def send_onvif_request(
             response_text = await response.text()
     except (TimeoutError, aiohttp.ClientError):
         return None
+    except (UnicodeDecodeError, LookupError):
+        # Non-UTF-8 bodies or an unknown declared charset (e.g. GBK firmware
+        # without a valid charset header) must not escape the "return None"
+        # contract that every caller relies on to detect failure.
+        return None
 
     return response.status, response_text
 

@@ -736,3 +736,28 @@ async def test_reconfigure_maps_authentication_error_to_invalid_auth(hass) -> No
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
     assert result["errors"] == {"base": "invalid_auth"}
+
+
+def _schema_field(schema, key: str):
+    """Return the validator for a marker whose schema key matches ``key``."""
+    for marker, validator in schema.schema.items():
+        if marker.schema == key:
+            return validator
+    raise AssertionError(f"{key} not found in schema")
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [config_flow_module._build_manual_schema, config_flow_module._build_scan_schema],
+)
+def test_password_field_uses_password_selector(builder):
+    """The password field should render masked; username stays plain text."""
+    from homeassistant.helpers.selector import TextSelector, TextSelectorType
+
+    schema = builder()
+    password = _schema_field(schema, CONF_PASSWORD)
+    assert isinstance(password, TextSelector)
+    assert password.config["type"] == TextSelectorType.PASSWORD.value
+
+    username = _schema_field(schema, CONF_USERNAME)
+    assert username is str
