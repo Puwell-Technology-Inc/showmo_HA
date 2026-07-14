@@ -9,6 +9,7 @@ from .exceptions import AuthenticationError
 from .models import DeviceInfo, OnvifNotification, PullPointSubscription
 from .network import check_rtsp
 from .onvif import (
+    check_media_credentials,
     check_onvif,
     create_pullpoint_subscription,
     get_event_service_url,
@@ -200,6 +201,31 @@ class ShowMoClient:
         if token is not None:
             self._profile_token = token
         return token
+
+    async def check_credentials(self) -> bool:
+        """Verify the stored credentials against an auth-enforcing service.
+
+        GetDeviceInformation is anonymous on WinEye firmware, so the media
+        service is probed instead. Raises AuthenticationError when the
+        camera explicitly rejects the credentials; returns True when they
+        are accepted and False when the check is inconclusive (unreachable
+        or no media service) — never treat False as an auth failure.
+        """
+        media_url = await self.get_media_service_url()
+        if media_url is None:
+            return False
+
+        session = await self._ensure_session()
+        accepted = await check_media_credentials(
+            session=session,
+            media_service_url=media_url,
+            username=self.username,
+            password=self.password,
+            timeout=10.0,
+        )
+        if accepted is False:
+            raise AuthenticationError("ONVIF credentials rejected")
+        return accepted is True
 
     async def _ptz_context(self) -> tuple[str, str] | None:
         """Resolve the PTZ service URL and a profile token, or None."""

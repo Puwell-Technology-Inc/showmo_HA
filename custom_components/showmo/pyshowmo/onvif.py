@@ -189,6 +189,30 @@ def is_soap_fault(xml_text: str) -> bool:
     return any(_local_name(element.tag) == "Fault" for element in root.iter())
 
 
+_AUTH_FAULT_CODES = frozenset({"FailedAuthentication", "NotAuthorized"})
+
+
+def is_auth_fault(xml_text: str) -> bool:
+    """Return whether a SOAP fault reports rejected credentials.
+
+    WinEye firmware answers a bad WS-Security digest with HTTP 200 and a
+    ``wsse:FailedAuthentication`` subcode; other firmware uses the ONVIF
+    ``ter:NotAuthorized`` fault. Both are recognized by the local name of
+    any fault ``Value`` element.
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return False
+
+    for element in root.iter():
+        if _local_name(element.tag) != "Value" or not element.text:
+            continue
+        if element.text.strip().split(":")[-1] in _AUTH_FAULT_CODES:
+            return True
+    return False
+
+
 async def send_onvif_request(
     session: aiohttp.ClientSession,
     url: str,
@@ -755,6 +779,45 @@ async def get_first_profile_token(
         return None
 
     return parse_first_profile_token(response_text)
+
+
+async def check_media_credentials(
+    session: aiohttp.ClientSession,
+    media_service_url: str,
+    username: str | None = None,
+    password: str | None = None,
+    timeout: float = 10.0,
+) -> bool | None:
+    """Check credentials against the media service, which enforces auth.
+
+    GetDeviceInformation is answered anonymously by WinEye firmware, so it
+    cannot validate credentials; GetProfiles rejects a bad WS-Security
+    digest with an auth fault. Returns True when accepted, False when
+    explicitly rejected, and None when inconclusive (unreachable or an
+    unrelated fault) — callers must not treat None as an auth failure.
+    """
+    body = build_soap_envelope(
+        ONVIF_GET_PROFILES_INNER,
+        username=username,
+        password=password,
+    )
+    result = await send_onvif_request(
+        session=session,
+        url=media_service_url,
+        body=body,
+        username=username,
+        password=password,
+        timeout=timeout,
+    )
+    if result is None:
+        return None
+
+    status, response_text = result
+    if status == 401 or is_auth_fault(response_text):
+        return False
+    if status == 200 and not is_soap_fault(response_text):
+        return True
+    return None
 
 
 async def _send_ptz_command(

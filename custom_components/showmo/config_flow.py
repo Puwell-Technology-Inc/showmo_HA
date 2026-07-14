@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
@@ -353,6 +354,12 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
                 return None, errors
 
+            # GetDeviceInformation is anonymous on WinEye firmware, so a
+            # wrong password would sail through the serial fetch below.
+            # The media service does enforce WS-Security; this raises
+            # AuthenticationError when the camera rejects the credentials.
+            await client.check_credentials()
+
             serial = await client.get_device_serial()
         except AuthenticationError:
             errors["base"] = "invalid_auth"
@@ -412,6 +419,69 @@ class ShowMoConfigFlow(ConfigFlow, domain=DOMAIN):
                 },
             ),
             errors,
+        )
+
+    async def async_step_reauth(
+        self,
+        entry_data: Mapping[str, Any],
+    ) -> ConfigFlowResult:
+        """Start reauth after the camera rejected the stored credentials."""
+        del entry_data
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Ask for the camera's current credentials and revalidate."""
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        if entry is None:
+            return self.async_abort(reason="reauth_failed")
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            validated, errors = await self._async_validate_camera_input(
+                {
+                    CONF_NAME: entry.data.get(CONF_NAME, ""),
+                    CONF_RTSP_URL: entry.data[CONF_RTSP_URL],
+                    CONF_USERNAME: user_input[CONF_USERNAME],
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                }
+            )
+            if validated is not None:
+                # Same guard as reconfigure: the new credentials must belong
+                # to the same physical camera this entry represents.
+                expected = entry.unique_id or entry.data.get("serial")
+                if (
+                    validated["serial"]
+                    and expected
+                    and validated["serial"] != expected
+                ):
+                    return self.async_abort(reason="wrong_device")
+
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_USERNAME: validated[CONF_USERNAME],
+                        CONF_PASSWORD: validated[CONF_PASSWORD],
+                    },
+                    reason="reauth_successful",
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USERNAME, default=entry.data.get(CONF_USERNAME, "")
+                    ): str,
+                    vol.Required(CONF_PASSWORD): _PASSWORD_SELECTOR,
+                }
+            ),
+            description_placeholders={"name": entry.title},
+            errors=errors,
         )
 
     async def async_step_reconfigure(

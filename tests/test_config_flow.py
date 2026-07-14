@@ -29,6 +29,22 @@ def _bypass_manifest_dependencies():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _accept_credentials_by_default():
+    """Pass the media-service credential check unless a test overrides it.
+
+    Every validation path calls ShowMoApiClient.check_credentials, which
+    would otherwise hit the network. Rejection is exercised explicitly in
+    test_manual_flow_rejects_wrong_password_via_credential_check.
+    """
+    with patch.object(
+        config_flow_module.ShowMoApiClient,
+        "check_credentials",
+        AsyncMock(return_value=True),
+    ):
+        yield
+
+
 DISCOVERED_DEVICE = {
     "ip": "192.168.8.120",
     "onvif": True,
@@ -198,6 +214,40 @@ async def test_scan_flow_blank_credentials_fall_back_to_factory_default(hass) ->
     assert result["step_id"] == "pick_device"
     assert discover.await_args.kwargs["username"] == "admin"
     assert discover.await_args.kwargs["password"] == "123456"
+
+
+async def test_manual_flow_rejects_wrong_password_via_credential_check(hass) -> None:
+    """A wrong password must fail validation even though device info is anonymous.
+
+    Real WinEye firmware answers GetDeviceInformation without auth, so only
+    the media-service credential check can catch a bad password.
+    """
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "test_connection",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "check_credentials",
+            AsyncMock(side_effect=AuthenticationError("ONVIF credentials rejected")),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_device_serial",
+            AsyncMock(return_value=DISCOVERED_DEVICE["serial"]),
+        ),
+    ):
+        result = await _start_manual_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input=MANUAL_INPUT,
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "manual"
+    assert result["errors"] == {"base": "invalid_auth"}
 
 
 async def test_manual_flow_rejects_invalid_rtsp_url(hass) -> None:
@@ -422,7 +472,8 @@ def _fake_update_reload_and_abort_factory(hass, entry):
     def _fake_update_reload_and_abort(flow, updated_entry, **kwargs):
         hass.config_entries.async_update_entry(
             entry=updated_entry,
-            title=kwargs["title"],
+            # Reauth updates only credentials and passes no title.
+            title=kwargs.get("title", updated_entry.title),
             data=kwargs["data"],
         )
         return flow.async_abort(reason=kwargs["reason"])
@@ -736,6 +787,138 @@ async def test_reconfigure_maps_authentication_error_to_invalid_auth(hass) -> No
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
     assert result["errors"] == {"base": "invalid_auth"}
+
+
+def _build_reauth_entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Front Door",
+        unique_id="sn-406A8EFF7512",
+        data={
+            CONF_NAME: "Front Door",
+            CONF_RTSP_URL: "rtsp://192.168.8.120/live0_0.sdp",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "123456",
+            "host": "192.168.8.120",
+            "port": 554,
+            "path": "/live0_0.sdp",
+            "serial": "sn-406A8EFF7512",
+            "manufacturer": "puwell",
+            "model": "WIN2",
+            "firmware": "V5.32.2",
+        },
+    )
+
+
+async def _start_reauth_flow(hass, entry):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+        },
+        data=entry.data,
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    return result
+
+
+async def test_reauth_updates_credentials_only(hass) -> None:
+    """Reauth should replace the stored credentials and keep everything else."""
+    entry = _build_reauth_entry()
+    entry.add_to_hass(hass)
+
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "test_connection",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_device_serial",
+            AsyncMock(return_value="sn-406A8EFF7512"),
+        ),
+        patch.object(
+            config_flow_module.ShowMoConfigFlow,
+            "async_update_reload_and_abort",
+            autospec=True,
+            side_effect=_fake_update_reload_and_abort_factory(hass, entry),
+        ),
+    ):
+        result = await _start_reauth_flow(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "new-secret"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_USERNAME] == "admin"
+    assert entry.data[CONF_PASSWORD] == "new-secret"
+    # Everything but the credentials is untouched.
+    assert entry.title == "Front Door"
+    assert entry.data[CONF_RTSP_URL] == "rtsp://192.168.8.120/live0_0.sdp"
+    assert entry.data["serial"] == "sn-406A8EFF7512"
+    assert entry.data["model"] == "WIN2"
+
+
+async def test_reauth_maps_authentication_error_to_invalid_auth(hass) -> None:
+    """Wrong new credentials should re-show the form with invalid_auth."""
+    entry = _build_reauth_entry()
+    entry.add_to_hass(hass)
+
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "test_connection",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_device_serial",
+            AsyncMock(side_effect=AuthenticationError("bad credentials")),
+        ),
+    ):
+        result = await _start_reauth_flow(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "wrong"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["errors"] == {"base": "invalid_auth"}
+    assert entry.data[CONF_PASSWORD] == "123456"
+
+
+async def test_reauth_aborts_on_different_device(hass) -> None:
+    """Reauth must not adopt credentials that belong to another camera."""
+    entry = _build_reauth_entry()
+    entry.add_to_hass(hass)
+
+    with (
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "test_connection",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(
+            config_flow_module.ShowMoApiClient,
+            "get_device_serial",
+            AsyncMock(return_value="sn-DIFFERENT"),
+        ),
+    ):
+        result = await _start_reauth_flow(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_USERNAME: "admin", CONF_PASSWORD: "new-secret"},
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_device"
+    assert entry.data[CONF_PASSWORD] == "123456"
 
 
 def _schema_field(schema, key: str):

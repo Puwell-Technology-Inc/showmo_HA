@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from homeassistant.const import CONF_NAME, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from custom_components.showmo import async_setup_entry, async_unload_entry
+from custom_components.showmo.api import AuthenticationError
 from custom_components.showmo.const import DOMAIN
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -40,6 +42,10 @@ async def test_async_setup_entry_stores_runtime_data_and_forwards_platforms(hass
     with (
         patch("custom_components.showmo.async_get_clientsession", return_value=session),
         patch("custom_components.showmo.ShowMoMotionCoordinator", return_value=motion),
+        patch(
+            "custom_components.showmo.ShowMoApiClient.check_credentials",
+            AsyncMock(return_value=True),
+        ),
         patch.object(
             hass.config_entries,
             "async_forward_entry_setups",
@@ -65,6 +71,10 @@ async def test_async_setup_entry_cleans_runtime_data_when_forward_fails(hass) ->
     with (
         patch("custom_components.showmo.async_get_clientsession", return_value=session),
         patch("custom_components.showmo.ShowMoMotionCoordinator", return_value=motion),
+        patch(
+            "custom_components.showmo.ShowMoApiClient.check_credentials",
+            AsyncMock(return_value=True),
+        ),
         patch.object(
             hass.config_entries,
             "async_forward_entry_setups",
@@ -75,6 +85,45 @@ async def test_async_setup_entry_cleans_runtime_data_when_forward_fails(hass) ->
         await async_setup_entry(hass, entry)
 
     assert entry.entry_id not in hass.data[DOMAIN]
+
+
+async def test_async_setup_entry_raises_auth_failed_on_rejected_credentials(hass) -> None:
+    """A 401 on the startup probe must surface as ConfigEntryAuthFailed (reauth)."""
+    entry = _build_entry()
+
+    with (
+        patch("custom_components.showmo.async_get_clientsession", return_value=object()),
+        patch(
+            "custom_components.showmo.ShowMoApiClient.check_credentials",
+            AsyncMock(side_effect=AuthenticationError("ONVIF credentials rejected")),
+        ),
+        pytest.raises(ConfigEntryAuthFailed),
+    ):
+        await async_setup_entry(hass, entry)
+
+    assert entry.entry_id not in hass.data.get(DOMAIN, {})
+
+
+async def test_async_setup_entry_continues_when_probe_cannot_connect(hass) -> None:
+    """An unreachable camera is not an auth failure; setup must still succeed."""
+    entry = _build_entry()
+
+    with (
+        patch("custom_components.showmo.async_get_clientsession", return_value=object()),
+        patch("custom_components.showmo.ShowMoMotionCoordinator", return_value=object()),
+        patch(
+            "custom_components.showmo.ShowMoApiClient.check_credentials",
+            AsyncMock(side_effect=TimeoutError()),
+        ),
+        patch.object(
+            hass.config_entries,
+            "async_forward_entry_setups",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        assert await async_setup_entry(hass, entry) is True
+
+    assert entry.entry_id in hass.data[DOMAIN]
 
 
 async def test_async_unload_entry_stops_motion_and_clears_runtime_data(hass) -> None:

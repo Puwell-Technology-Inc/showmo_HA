@@ -16,7 +16,8 @@
   - DeviceInfo 统一到 `entity.py::build_device_info`(camera/binary_sensor 不再互相覆盖设备页)
   - 发现安全收敛:XAddrs 绑定 UDP 源 IP(防伪造 ProbeMatch 收割凭据)+ 匿名先行探测(凭据只在 401 后发给同一 host)
   - 死代码清理(~130 行无调用 wrapper、死常量)、discovery 按 IP 去重
-- **93 个测试全绿**;CI = hassfest + pytest。
+- **Reauth(2026-07-14)**:凭据失效自动引导重新认证——加载时探测一次,密码被拒即 `ConfigEntryAuthFailed`(HA 弹重新认证通知,填新密码原地恢复,历史/自动化不断档)。真机发现:此固件 **GetDeviceInformation 匿名可访问**,serial 探测抓不到密码错误;凭据校验改走 media `GetProfiles`(错密返回 HTTP 200 + `wsse:FailedAuthentication` fault,兼容 `ter:NotAuthorized`),并接入 manual/reconfigure/reauth 全部验证路径(此前错密码也能通过验证添加成功——已修复)。真机三分支验证:对/错/离线。
+- **106 个测试全绿**;CI = hassfest + pytest。
 - **HACS 元数据**:`hacs.json`、`manifest.json`(documentation / issue_tracker)、`strings.json`(含 ptz 服务翻译)、`README.md`、`services.yaml`。
 - **`CLAUDE.md`** 项目上下文(Claude 启动自动读)。
 

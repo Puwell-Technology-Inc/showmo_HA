@@ -47,6 +47,18 @@
           "password": "Camera password"
         }
       },
+      "reauth_confirm": {
+        "title": "Reauthenticate Camera",
+        "description": "{name} rejected the stored credentials. The camera's username or password was probably changed (for example in the ShowMo app). Enter the current credentials to reconnect.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Camera username (commonly 'admin')",
+          "password": "The camera's current password"
+        }
+      },
       "reconfigure": {
         "title": "Reconfigure ShowMo Camera",
         "description": "Update your ShowMo camera settings.",
@@ -78,6 +90,8 @@
       "already_configured": "This camera is already configured",
       "reconfigure_successful": "Reconfiguration was successful",
       "reconfigure_failed": "Reconfiguration failed",
+      "reauth_successful": "Re-authentication was successful",
+      "reauth_failed": "The camera this flow belonged to is no longer configured",
       "wrong_device": "The detected camera is not the same device as the one originally configured. Reconfigure is only for updating the existing camera, not switching to a different one."
     }
   }

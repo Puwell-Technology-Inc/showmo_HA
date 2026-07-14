@@ -12,10 +12,14 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+import aiohttp
+
 from pyshowmo.onvif import (
     build_soap_envelope,
     build_ws_security,
+    check_media_credentials,
     create_pullpoint_subscription,
+    is_auth_fault,
     is_soap_fault,
     parse_first_profile_token,
     parse_service_url,
@@ -266,6 +270,103 @@ async def test_send_onvif_request_returns_none_on_decode_error() -> None:
         session=DecodeFailingSession(),
         url="http://cam:8080/onvif/device_service",
         body="<soap/>",
+        username="admin",
+        password="123456",
+    )
+    assert result is None
+
+
+AUTH_FAULT_XML = """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+  <soap:Body>
+    <soap:Fault>
+      <soap:Code>
+        <soap:Value>soap:Sender</soap:Value>
+        <soap:Subcode><soap:Value>wsse:FailedAuthentication</soap:Value></soap:Subcode>
+      </soap:Code>
+      <soap:Reason><soap:Text xml:lang="en">Authentication Failure</soap:Text></soap:Reason>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>"""
+
+NOT_AUTHORIZED_FAULT_XML = """<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:ter="http://www.onvif.org/ver10/error">
+  <soap:Body>
+    <soap:Fault>
+      <soap:Code>
+        <soap:Value>soap:Sender</soap:Value>
+        <soap:Subcode><soap:Value>ter:NotAuthorized</soap:Value></soap:Subcode>
+      </soap:Code>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>"""
+
+
+def test_is_auth_fault_detects_failed_authentication() -> None:
+    """The WinEye wsse:FailedAuthentication fault (captured from hardware)."""
+    assert is_auth_fault(AUTH_FAULT_XML) is True
+
+
+def test_is_auth_fault_detects_not_authorized() -> None:
+    """The standard ONVIF ter:NotAuthorized fault used by other firmware."""
+    assert is_auth_fault(NOT_AUTHORIZED_FAULT_XML) is True
+
+
+def test_is_auth_fault_ignores_unrelated_faults_and_success() -> None:
+    assert is_auth_fault(FAULT_XML) is False
+    assert is_auth_fault(PROFILES_XML) is False
+    assert is_auth_fault("not xml at all") is False
+
+
+@pytest.mark.asyncio
+async def test_check_media_credentials_accepts_valid_credentials() -> None:
+    session = RecordingSession(200, PROFILES_XML)
+    result = await check_media_credentials(
+        session=session,
+        media_service_url="http://cam:8080/onvif/media",
+        username="admin",
+        password="123456",
+    )
+    assert result is True
+    # The check must authenticate via WS-Security like every media call.
+    assert "<wsse:Security" in session.calls[0]["data"]
+
+
+@pytest.mark.asyncio
+async def test_check_media_credentials_rejects_bad_credentials() -> None:
+    """HTTP 200 + FailedAuthentication fault (real firmware behavior) -> False."""
+    session = RecordingSession(200, AUTH_FAULT_XML)
+    result = await check_media_credentials(
+        session=session,
+        media_service_url="http://cam:8080/onvif/media",
+        username="admin",
+        password="wrong",
+    )
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_check_media_credentials_inconclusive_on_unrelated_fault() -> None:
+    """A non-auth fault must not read as rejected credentials."""
+    session = RecordingSession(200, FAULT_XML)
+    result = await check_media_credentials(
+        session=session,
+        media_service_url="http://cam:8080/onvif/media",
+        username="admin",
+        password="123456",
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_media_credentials_inconclusive_when_unreachable() -> None:
+    class ErrorSession:
+        def post(self, url, data=None, auth=None, headers=None, timeout=None):  # noqa: ANN001
+            raise aiohttp.ClientError("unreachable")
+
+    result = await check_media_credentials(
+        session=ErrorSession(),
+        media_service_url="http://cam:8080/onvif/media",
         username="admin",
         password="123456",
     )
