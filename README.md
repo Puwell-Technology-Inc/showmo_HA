@@ -33,6 +33,8 @@ Home Assistant integration for **ShowMo / WinEye** ONVIF IP cameras.
 2. Choose **Scan Network** (auto-discovery) or **Manual Entry** (enter the RTSP URL, e.g. `rtsp://192.168.1.120/live0_0.sdp`).
 3. Provide the camera username/password (commonly `admin`).
 
+If you later change the camera's password (for example in the ShowMo app), Home Assistant prompts you to re-authenticate — enter the new credentials and everything (history, automations, dashboards) stays intact. Other settings can be changed anytime via the integration's **Reconfigure** option.
+
 ## PTZ service
 
 Call `showmo.ptz` on the camera entity (Developer Tools → Actions):
