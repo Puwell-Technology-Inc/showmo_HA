@@ -48,3 +48,9 @@ data:
   pan: 0.5                     # -1 … 1 (ContinuousMove only)
   continuous_duration: 0.5     # seconds before auto-stop (0 = no auto-stop)
 ```
+
+## License
+
+Copyright © 2026 Puwell Technology Inc.
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE): you may use, modify, and redistribute it, but derivative works must remain open source under the same license and retain attribution.

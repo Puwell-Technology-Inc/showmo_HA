@@ -1,7 +1,7 @@
 {
   "domain": "showmo",
   "name": "ShowMo",
-  "codeowners": [],
+  "codeowners": ["@Puwell-Technology-Inc"],
   "config_flow": true,
   "dependencies": ["stream"],
   "documentation": "https://github.com/Puwell-Technology-Inc/showmo_HA",
