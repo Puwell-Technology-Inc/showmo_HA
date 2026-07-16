@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/Puwell-Technology-Inc/showmo_HA/issues",
   "loggers": ["custom_components.showmo"],
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
