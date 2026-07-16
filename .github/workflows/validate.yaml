@@ -32,5 +32,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Drop once the ShowMo logo PR is merged into home-assistant/brands.
-          ignore: brands
