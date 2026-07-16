@@ -24,17 +24,13 @@ jobs:
       - run: pip install -r requirements-test.txt
       - run: pytest
 
-# HACS store validation (hacs/action) needs a PUBLIC repo with topics, a
-# release, and the logo merged into home-assistant/brands. On a private repo it
-# false-fails (can't read manifest.json / hacs.json over the API). Re-enable it
-# when going public:
-#
-#   hacs:
-#     name: HACS
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: hacs/action@main
-#         with:
-#           category: integration
-#           ignore: brands
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # Drop once the ShowMo logo PR is merged into home-assistant/brands.
+          ignore: brands
