@@ -36,7 +36,7 @@
 - [x] 仓库转 public(2026-07-15)+ description/topics 已设置
 - [x] Release `v0.1.0` 已发布(2026-07-16)——**custom repository 方式已可用**
 - [x] CI `hacs` job 已启用(暂 `ignore: brands`,brands PR 合并后去掉)
-- [ ] 提 ShowMo logo PR 到 `home-assistant/brands`(素材已有:`custom_components/showmo/brand/`,icon 256/512 合规;logo 是 icon 副本,只提交 icon 即可)
+- [x] ~~提 logo PR 到 `home-assistant/brands`~~ **不做了**(用户拍板 2026-07-16):HA ≥ 2026.3 直接读集成自带的 `brand/` 目录([Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)),HACS default 的 brands 检查也是先认 in-repo `brand/icon.png`、brands 仓库只是 fallback——我们的 `custom_components/showmo/brand/` 恰好完全符合新规范,已随 v0.1.0 生效。唯一代价:HA < 2026.3 老版本不显示图标(纯外观)。CI 里的 `ignore: brands` 可试着去掉验证。
 - [ ] (可选)提交 `hacs/default` 进默认商店;在此之前 custom repository 方式已可用
 
 ### 功能 / 质量
